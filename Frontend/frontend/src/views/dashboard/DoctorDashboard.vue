@@ -158,6 +158,44 @@
                 All Appointments
               </h4>
             </div>
+            
+            <!-- Filter Section -->
+            <div class="filter-section">
+              <div class="filter-row">
+                <div class="filter-group">
+                  <label class="filter-label">From Date</label>
+                  <input type="date" v-model="filterStartDate" class="filter-input" />
+                </div>
+                <div class="filter-group">
+                  <label class="filter-label">To Date</label>
+                  <input type="date" v-model="filterEndDate" class="filter-input" />
+                </div>
+                <div class="filter-group">
+                  <label class="filter-label">Status</label>
+                  <select v-model="filterStatus" class="filter-input">
+                    <option value="">All Status</option>
+                    <option value="BOOKED">Booked</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="CANCELLED">Cancelled</option>
+                  </select>
+                </div>
+                <div class="filter-actions">
+                  <button class="filter-btn primary" @click="applyFilters">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                    </svg>
+                    Apply
+                  </button>
+                  <button class="filter-btn secondary" @click="clearFilters">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </div>
+            
             <div class="section-body">
               <div v-if="allAppointments.length === 0" class="empty-state">
                 <p class="empty-text">No appointments found</p>
@@ -414,6 +452,12 @@ const availabilityMessage = ref("");
 const showTreatmentModal = ref(false);
 const selectedAppointment = ref(null);
 const saving = ref(false);
+
+// Filter state
+const filterStartDate = ref("");
+const filterEndDate = ref("");
+const filterStatus = ref("");
+
 const treatmentData = ref({
   diagnosis: "",
   prescription: "",
@@ -471,7 +515,16 @@ const getToken = () => auth.getToken();
 const loadAppointments = async () => {
   loading.value = true;
   try {
-    const response = await fetch("http://localhost:5000/api/doctor/appointments", {
+    // Build query string with filters
+    const params = new URLSearchParams();
+    if (filterStartDate.value) params.append('start_date', filterStartDate.value);
+    if (filterEndDate.value) params.append('end_date', filterEndDate.value);
+    if (filterStatus.value) params.append('status', filterStatus.value);
+    
+    const queryString = params.toString();
+    const url = `http://localhost:5000/api/doctor/appointments${queryString ? '?' + queryString : ''}`;
+    
+    const response = await fetch(url, {
       headers: { Authorization: `Bearer ${getToken()}` }
     });
     const data = await response.json();
@@ -481,6 +534,17 @@ const loadAppointments = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const applyFilters = () => {
+  loadAppointments();
+};
+
+const clearFilters = () => {
+  filterStartDate.value = "";
+  filterEndDate.value = "";
+  filterStatus.value = "";
+  loadAppointments();
 };
 
 const setAvailability = async () => {
@@ -660,6 +724,90 @@ const scrollToSection = (section) => {
 <style scoped>
 .doctor-dashboard {
   padding: 0;
+}
+
+/* Filter Section Styles */
+.filter-section {
+  padding: 1rem 1.5rem;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 150px;
+}
+
+.filter-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.filter-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #1e293b;
+  background: white;
+  transition: all 0.2s ease;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #5e63b6;
+  box-shadow: 0 0 0 3px rgba(94, 99, 182, 0.1);
+}
+
+.filter-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.filter-btn.primary {
+  background: #5e63b6;
+  color: white;
+}
+
+.filter-btn.primary:hover {
+  background: #4f52a3;
+}
+
+.filter-btn.secondary {
+  background: white;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.filter-btn.secondary:hover {
+  background: #f1f5f9;
+  color: #1e293b;
 }
 
 .dashboard-header {
@@ -898,6 +1046,28 @@ const scrollToSection = (section) => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+/* Custom scrollbar for appointments list */
+.appointments-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.appointments-list::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.appointments-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.appointments-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .appointment-card-modern {
@@ -1078,6 +1248,28 @@ const scrollToSection = (section) => {
 
 .appointments-table-wrapper {
   overflow-x: auto;
+  max-height: 450px;
+  overflow-y: auto;
+}
+
+/* Custom scrollbar for table wrapper */
+.appointments-table-wrapper::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.appointments-table-wrapper::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.appointments-table-wrapper::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.appointments-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .appointments-table {
@@ -1087,6 +1279,9 @@ const scrollToSection = (section) => {
 
 .appointments-table thead {
   background: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .appointments-table th {
@@ -1098,6 +1293,7 @@ const scrollToSection = (section) => {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 2px solid #e2e8f0;
+  background: #f8fafc;
 }
 
 .appointments-table td {
@@ -1291,6 +1487,28 @@ const scrollToSection = (section) => {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+/* Custom scrollbar for upcoming list */
+.upcoming-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.upcoming-list::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.upcoming-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.upcoming-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .upcoming-item {

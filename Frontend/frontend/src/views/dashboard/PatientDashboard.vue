@@ -265,12 +265,6 @@
                       </svg>
                       <span>{{ doc.experience_years || 0 }} Years Exp</span>
                     </div>
-                    <div class="stat-item">
-                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
-                      </svg>
-                      <span>4.8 Rating</span>
-                    </div>
                   </div>
                 </div>
                 <button 
@@ -458,9 +452,46 @@
 
       <!-- Treatment History Section -->
       <div v-else-if="activePanel === 'completed'" class="dashboard-content">
-        <div class="dashboard-header">
+        <div class="dashboard-header" style="text-align: center;">
           <h2 class="dashboard-title">Treatment History</h2>
           <p class="dashboard-subtitle">View all your completed treatments and diagnoses</p>
+        </div>
+
+        <!-- Filter Section for Treatment History -->
+        <div class="filter-section-card">
+          <div class="filter-row">
+            <div class="filter-group">
+              <label class="filter-label">From Date</label>
+              <input type="date" v-model="historyStartDate" class="filter-input" />
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">To Date</label>
+              <input type="date" v-model="historyEndDate" class="filter-input" />
+            </div>
+            <div class="filter-actions">
+              <button class="filter-btn primary" @click="applyHistoryFilters">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                </svg>
+                Apply Filter
+              </button>
+              <button class="filter-btn secondary" @click="clearHistoryFilters">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+                Clear
+              </button>
+              <button class="filter-btn export" @click="exportTreatments" :disabled="exporting">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                {{ exporting ? 'Exporting...' : 'Export CSV' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="exportMessage" class="export-inline-message" :class="{ success: exportMessage.includes('success') || exportMessage.includes('downloaded') }">
+            {{ exportMessage }}
+          </div>
         </div>
 
         <div class="treatments-container">
@@ -605,6 +636,10 @@ const bookingInProgress = ref(false);
 const showTreatmentModal = ref(false);
 const selectedTreatment = ref(null);
 
+// Filter state for treatment history
+const historyStartDate = ref("");
+const historyEndDate = ref("");
+
 const getToken = () => auth.getToken();
 
 const upcomingAppointments = computed(() => {
@@ -696,7 +731,7 @@ const viewDoctorAvailability = async (doctor) => {
   selectedSlot.value = null;
   
   try {
-    const response = await fetch(`http://localhost:5000/api/doctor/availability/${doctor.id}`, {
+    const response = await fetch(`http://localhost:5000/api/public/doctor/${doctor.id}/availability`, {
       headers: { Authorization: `Bearer ${getToken()}` }
     });
     const data = await response.json();
@@ -779,10 +814,21 @@ const cancelAppointment = async (appointmentId) => {
 };
 
 // Load appointments
-const loadAppointments = async () => {
+const loadAppointments = async (applyHistoryFilters = false) => {
   loading.value = true;
   try {
-    const response = await fetch("http://localhost:5000/api/patient/appointments", {
+    // Build query string with filters (only for treatment history)
+    const params = new URLSearchParams();
+    if (applyHistoryFilters) {
+      if (historyStartDate.value) params.append('start_date', historyStartDate.value);
+      if (historyEndDate.value) params.append('end_date', historyEndDate.value);
+      params.append('status', 'COMPLETED');
+    }
+    
+    const queryString = params.toString();
+    const url = `http://localhost:5000/api/patient/appointments${queryString ? '?' + queryString : ''}`;
+    
+    const response = await fetch(url, {
       headers: { Authorization: `Bearer ${getToken()}` }
     });
     const data = await response.json();
@@ -795,32 +841,66 @@ const loadAppointments = async () => {
   }
 };
 
+const applyHistoryFilters = () => {
+  loadAppointments(true);
+};
+
+const clearHistoryFilters = () => {
+  historyStartDate.value = "";
+  historyEndDate.value = "";
+  loadAppointments();
+};
+
 // View treatment details
 const viewTreatmentDetails = (apt) => {
   selectedTreatment.value = apt;
   showTreatmentModal.value = true;
 };
 
-// Export treatments
+// Export treatments as CSV (direct download)
 const exportTreatments = async () => {
+  if (completedAppointments.value.length === 0) {
+    exportMessage.value = "No treatment history to export";
+    return;
+  }
+  
   exporting.value = true;
   exportMessage.value = "";
   
   try {
-    const response = await fetch("http://localhost:5000/api/patient/export-treatments", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${getToken()}` }
-    });
-    const data = await response.json();
+    // Generate CSV content from completed appointments
+    const headers = ["Date", "Doctor", "Specialization", "Diagnosis", "Prescription", "Notes"];
+    const rows = completedAppointments.value.map(apt => [
+      apt.appointment_date,
+      `Dr. ${apt.doctor_name}`,
+      apt.doctor_specialization || "General",
+      apt.treatment?.diagnosis || "N/A",
+      apt.treatment?.prescription || "N/A",
+      apt.treatment?.notes || ""
+    ]);
     
-    if (response.ok) {
-      exportMessage.value = "Export started successfully! You will receive an email shortly.";
-    } else {
-      exportMessage.value = data.message || "Export failed";
-    }
+    // Create CSV string
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+    
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `treatment_history_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    exportMessage.value = "CSV downloaded successfully!";
+    setTimeout(() => { exportMessage.value = ""; }, 3000);
   } catch (error) {
     console.error("Error exporting:", error);
-    exportMessage.value = "Error starting export";
+    exportMessage.value = "Error generating CSV";
   } finally {
     exporting.value = false;
   }
@@ -837,6 +917,121 @@ onMounted(() => {
   display: flex;
   min-height: 100vh;
   background: #f8fafc;
+}
+
+/* Filter Section Styles */
+.filter-section-card {
+  background: white;
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 150px;
+}
+
+.filter-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.filter-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #1e293b;
+  background: white;
+  transition: all 0.2s ease;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #5e63b6;
+  box-shadow: 0 0 0 3px rgba(94, 99, 182, 0.1);
+}
+
+.filter-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.filter-btn.primary {
+  background: #5e63b6;
+  color: white;
+}
+
+.filter-btn.primary:hover {
+  background: #4f52a3;
+}
+
+.filter-btn.secondary {
+  background: white;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.filter-btn.secondary:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.filter-btn.export {
+  background: #10b981;
+  color: white;
+  border: none;
+}
+
+.filter-btn.export:hover {
+  background: #059669;
+}
+
+.filter-btn.export:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.export-inline-message {
+  margin-top: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.export-inline-message.success {
+  background: #ecfdf5;
+  color: #059669;
 }
 
 .dashboard-main {

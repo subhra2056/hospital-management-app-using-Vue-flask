@@ -4,6 +4,10 @@ from .models import User, PatientProfile, TokenBlocklist, DoctorProfile, Appoint
 from flask_jwt_extended import jwt_required, get_jwt, create_access_token, get_jwt_identity
 from werkzeug.security import check_password_hash, generate_password_hash
 from .database import db
+from .cache import (
+    cache_response, cache_with_user, invalidate_cache, invalidate_user_cache,
+    CACHE_TIMEOUT_SHORT, CACHE_TIMEOUT_MEDIUM, CACHE_TIMEOUT_LONG, CACHE_TIMEOUT_STATS
+)
 from datetime import datetime, date, time, timedelta
 from sqlalchemy import and_, or_
 
@@ -132,6 +136,10 @@ class PatientRegisterAPI(Resource):
 
             db.session.add(patient_profile)
             db.session.commit()
+            
+            # Invalidate related caches
+            invalidate_cache("cache:patient_*")
+            invalidate_cache("cache:home_stats:*")
 
         except Exception as e:
             db.session.rollback()
@@ -273,6 +281,11 @@ class DoctorRegistration(Resource):
             department.doctors_registered += 1
             
             db.session.commit()
+            
+            # Invalidate related caches
+            invalidate_cache("cache:doctor_*")
+            invalidate_cache("cache:public_departments:*")
+            invalidate_cache("cache:home_stats:*")
 
         except Exception as e:
             db.session.rollback()
@@ -308,6 +321,7 @@ class DoctorRegistration(Resource):
 class DoctorCount(Resource):
 
     @jwt_required()
+    @cache_response(timeout=CACHE_TIMEOUT_STATS, key_prefix="doctor_count")
     def get(self):
         count = User.query.filter_by(role="doctor").count()
         return {"total_doctors": count}, 200
@@ -319,6 +333,7 @@ class DoctorCount(Resource):
 class PatientCount(Resource):
 
     @jwt_required()
+    @cache_response(timeout=CACHE_TIMEOUT_STATS, key_prefix="patient_count")
     def get(self):
         count = User.query.filter_by(role="patient").count()
         return {"total_patients": count}, 200
@@ -328,6 +343,7 @@ class PatientCount(Resource):
 #==============================================================================
 
 class DoctorList(Resource):
+    @cache_response(timeout=CACHE_TIMEOUT_MEDIUM, key_prefix="doctor_list")
     def get(self):
         doctors = (
             db.session.query(User)
@@ -361,6 +377,7 @@ class DoctorList(Resource):
 #==============================================================================
     
 class PatientList(Resource):
+    @cache_response(timeout=CACHE_TIMEOUT_MEDIUM, key_prefix="patient_list")
     def get(self):
         patients = (
             db.session.query(User)
@@ -455,6 +472,9 @@ class BookAppointmentAPI(Resource):
         db.session.add(appointment)
         db.session.commit()
         
+        # Invalidate stats cache when new appointment is created
+        invalidate_cache("cache:home_stats:*")
+        
         return make_response(jsonify({
             "message": "Appointment booked successfully",
             "appointment_id": appointment.id
@@ -479,6 +499,24 @@ class CancelAppointmentAPI(Resource):
         
         if user.role == "doctor" and appointment.doctor_id != user_id:
             return make_response(jsonify({"message": "Unauthorized"}), 403)
+        
+        # Handle availability slot based on who cancels
+        doctor_profile = DoctorProfile.query.filter_by(user_id=appointment.doctor_id).first()
+        if doctor_profile:
+            availability_slot = DoctorAvailability.query.filter_by(
+                doctor_profile_id=doctor_profile.id,
+                date=appointment.appointment_date,
+                start_time=appointment.appointment_time,
+                is_booked=True
+            ).first()
+            
+            if availability_slot:
+                if user.role == "doctor":
+                    # Doctor cancels: delete the slot entirely
+                    db.session.delete(availability_slot)
+                else:
+                    # Patient cancels: make slot available again
+                    availability_slot.is_booked = False
         
         appointment.status = "CANCELLED"
         db.session.commit()
@@ -512,13 +550,31 @@ class DoctorAvailabilityAPI(Resource):
         
         try:
             avail_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-            start_time = datetime.strptime(start_time_str, "%H:%M").time()
-            end_time = datetime.strptime(end_time_str, "%H:%M").time()
+            # Handle both HH:MM and HH:MM:SS formats
+            try:
+                start_time = datetime.strptime(start_time_str, "%H:%M").time()
+            except ValueError:
+                start_time = datetime.strptime(start_time_str, "%H:%M:%S").time()
+            try:
+                end_time = datetime.strptime(end_time_str, "%H:%M").time()
+            except ValueError:
+                end_time = datetime.strptime(end_time_str, "%H:%M:%S").time()
         except ValueError:
             return make_response(jsonify({"message": "Invalid date or time format"}), 400)
         
         if avail_date < date.today():
             return make_response(jsonify({"message": "Cannot set availability for past dates"}), 400)
+        
+        # Check for duplicate availability (same doctor, date, and time)
+        existing = DoctorAvailability.query.filter_by(
+            doctor_profile_id=doctor_profile.id,
+            date=avail_date,
+            start_time=start_time,
+            end_time=end_time
+        ).first()
+        
+        if existing:
+            return make_response(jsonify({"message": "This availability slot already exists"}), 409)
         
         availability = DoctorAvailability(
             doctor_profile_id=doctor_profile.id,
@@ -533,9 +589,10 @@ class DoctorAvailabilityAPI(Resource):
         
         return make_response(jsonify({"message": "Availability added successfully"}), 201)
     
-    @jwt_required()
-    def get(self, doctor_id=None):
+    @jwt_required(optional=True)
+    def get(self, doctor_id=None, availability_id=None):
         if doctor_id:
+            # Public endpoint to get doctor's available slots
             doctor_profile = DoctorProfile.query.filter_by(user_id=doctor_id).first()
             if not doctor_profile:
                 return make_response(jsonify({"message": "Doctor not found"}), 404)
@@ -545,6 +602,7 @@ class DoctorAvailabilityAPI(Resource):
                 is_booked=False
             ).filter(DoctorAvailability.date >= date.today()).all()
         else:
+            # Doctor's own availability management
             user_id = int(get_jwt_identity())
             user = User.query.get(user_id)
             
@@ -557,7 +615,7 @@ class DoctorAvailabilityAPI(Resource):
             
             availabilities = DoctorAvailability.query.filter_by(
                 doctor_profile_id=doctor_profile.id
-            ).filter(DoctorAvailability.date >= date.today()).all()
+            ).filter(DoctorAvailability.date >= date.today()).order_by(DoctorAvailability.date, DoctorAvailability.start_time).all()
         
         result = []
         for avail in availabilities:
@@ -572,7 +630,10 @@ class DoctorAvailabilityAPI(Resource):
         return make_response(jsonify({"availabilities": result}), 200)
     
     @jwt_required()
-    def put(self, availability_id):
+    def put(self, availability_id=None, doctor_id=None):
+        if not availability_id:
+            return make_response(jsonify({"message": "Availability ID required"}), 400)
+            
         user_id = int(get_jwt_identity())
         user = User.query.get(user_id)
         
@@ -604,13 +665,32 @@ class DoctorAvailabilityAPI(Resource):
         
         try:
             avail_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-            start_time = datetime.strptime(start_time_str, "%H:%M").time()
-            end_time = datetime.strptime(end_time_str, "%H:%M").time()
+            # Handle both HH:MM and HH:MM:SS formats
+            try:
+                start_time = datetime.strptime(start_time_str, "%H:%M").time()
+            except ValueError:
+                start_time = datetime.strptime(start_time_str, "%H:%M:%S").time()
+            try:
+                end_time = datetime.strptime(end_time_str, "%H:%M").time()
+            except ValueError:
+                end_time = datetime.strptime(end_time_str, "%H:%M:%S").time()
         except ValueError:
             return make_response(jsonify({"message": "Invalid date or time format"}), 400)
         
         if avail_date < date.today():
             return make_response(jsonify({"message": "Cannot set availability for past dates"}), 400)
+        
+        # Check for duplicate (excluding current availability)
+        existing = DoctorAvailability.query.filter(
+            DoctorAvailability.doctor_profile_id == doctor_profile.id,
+            DoctorAvailability.date == avail_date,
+            DoctorAvailability.start_time == start_time,
+            DoctorAvailability.end_time == end_time,
+            DoctorAvailability.id != availability_id
+        ).first()
+        
+        if existing:
+            return make_response(jsonify({"message": "This availability slot already exists"}), 409)
         
         availability.date = avail_date
         availability.start_time = start_time
@@ -621,7 +701,10 @@ class DoctorAvailabilityAPI(Resource):
         return make_response(jsonify({"message": "Availability updated successfully"}), 200)
     
     @jwt_required()
-    def delete(self, availability_id):
+    def delete(self, availability_id=None, doctor_id=None):
+        if not availability_id:
+            return make_response(jsonify({"message": "Availability ID required"}), 400)
+            
         user_id = int(get_jwt_identity())
         user = User.query.get(user_id)
         
@@ -661,7 +744,34 @@ class PatientAppointmentsAPI(Resource):
         if user.role != "patient":
             return make_response(jsonify({"message": "Unauthorized"}), 403)
         
-        appointments = Appointment.query.filter_by(patient_id=user_id).order_by(
+        # Get filter parameters
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        status_filter = request.args.get('status')
+        
+        # Build query
+        query = Appointment.query.filter_by(patient_id=user_id)
+        
+        # Apply date filters
+        if start_date:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                query = query.filter(Appointment.appointment_date >= start)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                end = datetime.strptime(end_date, '%Y-%m-%d').date()
+                query = query.filter(Appointment.appointment_date <= end)
+            except ValueError:
+                pass
+        
+        # Apply status filter
+        if status_filter and status_filter in ['BOOKED', 'COMPLETED', 'CANCELLED']:
+            query = query.filter(Appointment.status == status_filter)
+        
+        appointments = query.order_by(
             Appointment.appointment_date.desc(),
             Appointment.appointment_time.desc()
         ).all()
@@ -706,7 +816,34 @@ class DoctorAppointmentsAPI(Resource):
         if user.role != "doctor":
             return make_response(jsonify({"message": "Unauthorized"}), 403)
         
-        appointments = Appointment.query.filter_by(doctor_id=user_id).order_by(
+        # Get filter parameters
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        status_filter = request.args.get('status')
+        
+        # Build query
+        query = Appointment.query.filter_by(doctor_id=user_id)
+        
+        # Apply date filters
+        if start_date:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                query = query.filter(Appointment.appointment_date >= start)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                end = datetime.strptime(end_date, '%Y-%m-%d').date()
+                query = query.filter(Appointment.appointment_date <= end)
+            except ValueError:
+                pass
+        
+        # Apply status filter
+        if status_filter and status_filter in ['BOOKED', 'COMPLETED', 'CANCELLED']:
+            query = query.filter(Appointment.status == status_filter)
+        
+        appointments = query.order_by(
             Appointment.appointment_date.asc(),
             Appointment.appointment_time.asc()
         ).all()
@@ -1118,6 +1255,7 @@ class GetUserProfileAPI(Resource):
 class ExportPatientTreatmentsAPI(Resource):
     @jwt_required()
     def post(self):
+        """Trigger async CSV export job for patient treatment history."""
         user_id = int(get_jwt_identity())
         user = User.query.get(user_id)
         
@@ -1126,12 +1264,50 @@ class ExportPatientTreatmentsAPI(Resource):
         
         from Backend.controllers.tasks import export_patient_treatments_csv
         
+        # Start the async export job
         task = export_patient_treatments_csv.delay(user_id)
         
         return make_response(jsonify({
-            "message": "Export job started",
-            "task_id": task.id
+            "message": "Export job started. You will receive an email with the CSV file once complete.",
+            "task_id": task.id,
+            "status": "PENDING"
         }), 202)
+    
+    @jwt_required()
+    def get(self):
+        """Check the status of an export job."""
+        user_id = int(get_jwt_identity())
+        user = User.query.get(user_id)
+        
+        if user.role != "patient":
+            return make_response(jsonify({"message": "Unauthorized"}), 403)
+        
+        task_id = request.args.get("task_id")
+        
+        if not task_id:
+            return make_response(jsonify({"message": "task_id is required"}), 400)
+        
+        from Backend.controllers.celery_app import celery_app
+        
+        task_result = celery_app.AsyncResult(task_id)
+        
+        response = {
+            "task_id": task_id,
+            "status": task_result.status,
+        }
+        
+        if task_result.ready():
+            if task_result.successful():
+                result = task_result.result
+                response["result"] = result
+                response["message"] = "Export completed successfully. Check your email for the CSV file."
+            else:
+                response["message"] = "Export failed"
+                response["error"] = str(task_result.result)
+        else:
+            response["message"] = "Export is still processing..."
+        
+        return make_response(jsonify(response), 200)
 
 #==============================================================================
 # Department Management (Admin)
@@ -1192,6 +1368,10 @@ class DepartmentAPI(Resource):
         db.session.add(department)
         db.session.commit()
         
+        # Invalidate department caches
+        invalidate_cache("cache:public_departments:*")
+        invalidate_cache("cache:admin_departments:*")
+        
         return make_response(jsonify({
             "message": "Department created successfully",
             "department": {
@@ -1220,6 +1400,10 @@ class DepartmentAPI(Resource):
         
         db.session.delete(department)
         db.session.commit()
+        
+        # Invalidate department caches
+        invalidate_cache("cache:public_departments:*")
+        invalidate_cache("cache:admin_departments:*")
         
         return make_response(jsonify({"message": "Department deleted successfully"}), 200)
 
@@ -1482,6 +1666,14 @@ class BlockUserAPI(Resource):
         user.active = False
         db.session.commit()
         
+        # Invalidate related caches based on user role
+        if user.role == "doctor":
+            invalidate_cache("cache:doctor_*")
+            invalidate_cache("cache:public_departments:*")
+        elif user.role == "patient":
+            invalidate_cache("cache:patient_*")
+        invalidate_cache("cache:home_stats:*")
+        
         return make_response(jsonify({"message": "User blocked successfully"}), 200)
 
 #==============================================================================
@@ -1507,6 +1699,14 @@ class UnblockUserAPI(Resource):
         user.active = True
         db.session.commit()
         
+        # Invalidate related caches based on user role
+        if user.role == "doctor":
+            invalidate_cache("cache:doctor_*")
+            invalidate_cache("cache:public_departments:*")
+        elif user.role == "patient":
+            invalidate_cache("cache:patient_*")
+        invalidate_cache("cache:home_stats:*")
+        
         return make_response(jsonify({"message": "User unblocked successfully"}), 200)
 
 #==============================================================================
@@ -1514,6 +1714,7 @@ class UnblockUserAPI(Resource):
 #==============================================================================
 
 class HomeStatsAPI(Resource):
+    @cache_response(timeout=CACHE_TIMEOUT_STATS, key_prefix="home_stats")
     def get(self):
         total_patients = User.query.filter_by(role="patient").count()
         total_doctors = User.query.filter_by(role="doctor").count()
@@ -1531,6 +1732,7 @@ class HomeStatsAPI(Resource):
 
 class PublicDepartmentsAPI(Resource):
     @jwt_required()
+    @cache_response(timeout=CACHE_TIMEOUT_MEDIUM, key_prefix="public_departments")
     def get(self):
         departments = Department.query.all()
         result = []

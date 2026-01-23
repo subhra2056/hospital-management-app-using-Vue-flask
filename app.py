@@ -7,7 +7,6 @@ from werkzeug.security import generate_password_hash
 from Backend.controllers.models import User, TokenBlocklist, Department
 from flask_cors import CORS
 from Backend.controllers.cleanup_tokens import delete_expired_tokens
-from Backend.controllers.celery_app import celery_app
 
 def create_app():
 
@@ -18,11 +17,6 @@ def create_app():
 
     db.init_app(app)
     jwt = JWTManager(app)
-    
-    celery_app.conf.update(
-        broker_url='redis://localhost:6379/0',
-        result_backend='redis://localhost:6379/0'
-    )
 
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(jwt_header, jwt_payload):
@@ -121,7 +115,7 @@ api.add_resource(DoctorList, "/admin/doctor-list")
 api.add_resource(PatientList, "/admin/patient-list")
 api.add_resource(BookAppointmentAPI, '/patient/appointments/book')
 api.add_resource(CancelAppointmentAPI, '/appointments/<int:appointment_id>/cancel')
-api.add_resource(DoctorAvailabilityAPI, '/doctor/availability', '/doctor/availability/<int:doctor_id>', '/doctor/availability/<int:availability_id>')
+api.add_resource(DoctorAvailabilityAPI, '/doctor/availability', '/doctor/availability/edit/<int:availability_id>', '/public/doctor/<int:doctor_id>/availability')
 api.add_resource(PatientAppointmentsAPI, '/patient/appointments')
 api.add_resource(DoctorAppointmentsAPI, '/doctor/appointments')
 api.add_resource(AddTreatmentAPI, '/doctor/appointments/<int:appointment_id>/treatment')

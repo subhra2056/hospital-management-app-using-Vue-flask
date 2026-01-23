@@ -42,6 +42,9 @@ class DoctorProfile(db.Model):
 
 class DoctorAvailability(db.Model):
     __tablename__ = "doctor_availability"
+    __table_args__ = (
+        db.UniqueConstraint('doctor_profile_id', 'date', 'start_time', 'end_time', name='unique_availability_slot'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     doctor_profile_id = db.Column(db.Integer, db.ForeignKey("doctor_profiles.id"), nullable=False)

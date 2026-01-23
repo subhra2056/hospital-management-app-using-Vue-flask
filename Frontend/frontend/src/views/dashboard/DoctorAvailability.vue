@@ -212,7 +212,7 @@ const saveAvailability = async () => {
     const token = auth.getToken();
     const method = showEditModal.value ? "PUT" : "POST";
     const url = showEditModal.value
-      ? `http://localhost:5000/api/doctor/availability/${editingAvailability.value.id}`
+      ? `http://localhost:5000/api/doctor/availability/edit/${editingAvailability.value.id}`
       : "http://localhost:5000/api/doctor/availability";
 
     const response = await fetch(url, {
@@ -251,7 +251,7 @@ const deleteAvailability = async (id) => {
 
   try {
     const token = auth.getToken();
-    const response = await fetch(`http://localhost:5000/api/doctor/availability/${id}`, {
+    const response = await fetch(`http://localhost:5000/api/doctor/availability/edit/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
