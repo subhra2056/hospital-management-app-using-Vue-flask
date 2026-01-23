@@ -1,7 +1,7 @@
 <template>
   <div class="profile-container">
     <div class="profile-header">
-      <h2 class="profile-title text-center">{{ isEditing ? 'Edit Profile' : 'My Profile' }}</h2>
+      <h2 class="profile-title text-center mt-4">{{ isEditing ? 'Edit Profile' : 'My Profile' }}</h2>
       <p class="profile-subtitle text-center">{{ isEditing ? 'Update your account information' : 'View and manage your account information' }}</p>
     </div>
 

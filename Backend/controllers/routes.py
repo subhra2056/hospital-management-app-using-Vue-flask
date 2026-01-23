@@ -268,6 +268,10 @@ class DoctorRegistration(Resource):
             )
 
             db.session.add(doctor_profile)
+            
+            # Increment the doctors_registered count for the department
+            department.doctors_registered += 1
+            
             db.session.commit()
 
         except Exception as e:
@@ -1146,11 +1150,17 @@ class DepartmentAPI(Resource):
         result = []
         
         for dept in departments:
+            # Count active doctors in this department
+            active_doctors_count = DoctorProfile.query.join(User).filter(
+                DoctorProfile.department_id == dept.id,
+                User.active == True
+            ).count()
+            
             result.append({
                 "id": dept.id,
                 "name": dept.name,
                 "description": dept.description,
-                "doctors_registered": dept.doctors_registered
+                "doctors_registered": active_doctors_count
             })
         
         return make_response(jsonify({"departments": result}), 200)
@@ -1203,8 +1213,9 @@ class DepartmentAPI(Resource):
         if not department:
             return make_response(jsonify({"message": "Department not found"}), 404)
         
-        # Check if department has doctors registered
-        if department.doctors_registered > 0:
+        # Check if department has doctors registered (use dynamic count)
+        doctors_count = DoctorProfile.query.filter_by(department_id=department_id).count()
+        if doctors_count > 0:
             return make_response(jsonify({"message": "Cannot delete department with registered doctors"}), 400)
         
         db.session.delete(department)
@@ -1525,11 +1536,17 @@ class PublicDepartmentsAPI(Resource):
         result = []
         
         for dept in departments:
+            # Count active doctors in this department
+            active_doctors_count = DoctorProfile.query.join(User).filter(
+                DoctorProfile.department_id == dept.id,
+                User.active == True
+            ).count()
+            
             result.append({
                 "id": dept.id,
                 "name": dept.name,
                 "description": dept.description,
-                "doctors_registered": dept.doctors_registered
+                "doctors_registered": active_doctors_count
             })
         
         return make_response(jsonify({"departments": result}), 200)
