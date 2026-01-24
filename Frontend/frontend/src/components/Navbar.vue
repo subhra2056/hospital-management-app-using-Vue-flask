@@ -49,7 +49,7 @@
                   <RouterLink class="dropdown-item" to="/login">Login</RouterLink>
                 </li>
                 <li>
-                  <RouterLink class="dropdown-item" to="/login">Create Account</RouterLink>
+                  <RouterLink class="dropdown-item" to="/signup">Create Account</RouterLink>
                 </li>
               </template>
             </ul>

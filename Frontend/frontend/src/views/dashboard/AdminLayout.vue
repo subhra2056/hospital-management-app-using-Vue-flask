@@ -18,6 +18,7 @@ const activeSection = ref("dashboard");
 function handleChange(section) {
   activeSection.value = section;
 
+  if (section === "profile") router.push("/profile");
   if (section === "dashboard") router.push("/admin/dashboard");
   if (section === "addDoctor") router.push("/admin/add-doctor");
   if (section === "viewDoctors") router.push("/admin/doctor-list");
