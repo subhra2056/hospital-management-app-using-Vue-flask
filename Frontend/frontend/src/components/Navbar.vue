@@ -22,11 +22,6 @@
 
       <div class="collapse navbar-collapse justify-content-end" id="navbarContent">
         <div class="d-flex align-items-lg-center gap-3 flex-column flex-lg-row mt-3 mt-lg-0">
-          <input
-            type="search"
-            class="form-control search-input"
-            placeholder="Search doctors..."
-          />
 
           <div class="dropdown">
             <button
