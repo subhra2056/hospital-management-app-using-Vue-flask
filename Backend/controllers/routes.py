@@ -10,6 +10,142 @@ from .cache import (
 )
 from datetime import datetime, date, time, timedelta
 from sqlalchemy import and_, or_
+import google.generativeai as genai
+import json
+import re
+
+# Configure Google Gemini
+GEMINI_API_KEY = "AIzaSyDCFlcihtRl7Ag0D9wg8Y49Iph8ioXTKOk"
+genai.configure(api_key=GEMINI_API_KEY)
+
+# Helper function for parsing dates from natural language
+def parse_dates_from_message(message, today):
+    """Parse dates from natural language"""
+    dates = []
+    message = message.lower()
+    
+    # Tomorrow
+    if "tomorrow" in message:
+        dates.append(today + timedelta(days=1))
+    
+    # Today
+    if "today" in message:
+        dates.append(today)
+    
+    # Day after tomorrow
+    if "day after tomorrow" in message:
+        dates.append(today + timedelta(days=2))
+    
+    # This week
+    if "this week" in message:
+        for i in range(7):
+            future_date = today + timedelta(days=i)
+            if future_date.weekday() < 5:
+                dates.append(future_date)
+    
+    # Next week
+    if "next week" in message:
+        days_until_monday = (7 - today.weekday()) % 7
+        if days_until_monday == 0:
+            days_until_monday = 7
+        next_monday = today + timedelta(days=days_until_monday)
+        for i in range(5):
+            dates.append(next_monday + timedelta(days=i))
+    
+    # Specific weekdays
+    weekday_map = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+        "friday": 4, "saturday": 5, "sunday": 6,
+        "mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6
+    }
+    
+    for day_name, day_num in weekday_map.items():
+        if day_name in message:
+            days_ahead = day_num - today.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            if "next" in message and day_name in message:
+                days_ahead += 7
+            dates.append(today + timedelta(days=days_ahead))
+    
+    # Month day pattern (e.g., "January 25", "jan 25", "25 january")
+    month_map = {
+        "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+        "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6,
+        "jul": 7, "july": 7, "aug": 8, "august": 8, "sep": 9, "september": 9,
+        "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12
+    }
+    
+    for month_name, month_num in month_map.items():
+        # Pattern: month day (e.g., "january 25")
+        pattern = rf"{month_name}\s+(\d{{1,2}})"
+        match = re.search(pattern, message)
+        if match:
+            day = int(match.group(1))
+            year = today.year
+            if month_num < today.month or (month_num == today.month and day < today.day):
+                year += 1
+            try:
+                dates.append(date(year, month_num, day))
+            except ValueError:
+                pass
+        
+        # Pattern: day month (e.g., "25 january")
+        pattern = rf"(\d{{1,2}})\s*(?:st|nd|rd|th)?\s*{month_name}"
+        match = re.search(pattern, message)
+        if match:
+            day = int(match.group(1))
+            year = today.year
+            if month_num < today.month or (month_num == today.month and day < today.day):
+                year += 1
+            try:
+                dates.append(date(year, month_num, day))
+            except ValueError:
+                pass
+    
+    # Remove duplicates and sort
+    dates = sorted(list(set(dates)))
+    return dates
+
+def parse_times_from_message(message):
+    """Parse time range from natural language"""
+    message = message.lower()
+    
+    # Check for common time patterns first
+    if "morning" in message:
+        return time(9, 0), time(12, 0)
+    elif "afternoon" in message:
+        return time(13, 0), time(17, 0)
+    elif "evening" in message:
+        return time(17, 0), time(20, 0)
+    elif "full day" in message or "all day" in message:
+        return time(9, 0), time(17, 0)
+    
+    # Pattern for times like "9am", "9:00", "09:00", "9 am", "9:00am"
+    time_pattern = r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?'
+    matches = re.findall(time_pattern, message)
+    
+    times = []
+    for match in matches:
+        hour = int(match[0])
+        minute = int(match[1]) if match[1] else 0
+        period = match[2].lower() if match[2] else None
+        
+        if period == 'pm' and hour != 12:
+            hour += 12
+        elif period == 'am' and hour == 12:
+            hour = 0
+        elif not period and 1 <= hour <= 7:
+            # Assume PM for times like "5" without am/pm (typical work hours)
+            hour += 12
+        
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            times.append(time(hour, minute))
+    
+    if len(times) >= 2:
+        return times[0], times[1]
+    
+    return None, None
 
 #==============================================================================
 #Login 
@@ -1752,4 +1888,343 @@ class PublicDepartmentsAPI(Resource):
             })
         
         return make_response(jsonify({"departments": result}), 200)
+
+
+#==============================================================================
+# AI Chatbot API - Help patients find doctors
+#==============================================================================
+
+class ChatbotAPI(Resource):
+    @jwt_required()
+    def post(self):
+        data = request.get_json()
+        
+        if not data or not data.get("message"):
+            return make_response(jsonify({"message": "Please provide a message"}), 400)
+        
+        user_message = data.get("message", "")
+        
+        # Get all departments for context
+        departments = Department.query.all()
+        dept_list = [d.name for d in departments]
+        
+        try:
+            # Use Gemini to analyze symptoms and recommend department
+            model = genai.GenerativeModel('gemini-2.0-flash')
+            
+            prompt = f"""You are a medical assistant AI for a hospital appointment system. 
+            
+Available departments in our hospital: {', '.join(dept_list)}
+
+Patient's message: "{user_message}"
+
+Analyze the patient's symptoms/concerns and respond in JSON format ONLY (no markdown, no code blocks):
+{{
+    "department": "most relevant department name from the list above or null if unclear",
+    "symptoms_detected": ["list", "of", "detected", "symptoms"],
+    "response": "A helpful, empathetic response to the patient explaining your recommendation. Keep it concise but caring. If you detected symptoms, explain which department would be best and why. If the message is unclear, kindly ask for more details about their symptoms.",
+    "urgency": "low/medium/high based on symptoms"
+}}
+
+Important:
+- Only recommend departments from the available list
+- Be empathetic and professional
+- If symptoms seem serious (chest pain, difficulty breathing, etc.), indicate high urgency
+- Return ONLY valid JSON, no other text"""
+
+            response = model.generate_content(prompt)
+            response_text = response.text.strip()
+            
+            # Clean up response - remove markdown code blocks if present
+            if response_text.startswith('```'):
+                response_text = re.sub(r'^```(?:json)?\n?', '', response_text)
+                response_text = re.sub(r'\n?```$', '', response_text)
+            
+            ai_response = json.loads(response_text)
+            
+            detected_department = ai_response.get("department")
+            detected_keywords = ai_response.get("symptoms_detected", [])
+            ai_message = ai_response.get("response", "")
+            urgency = ai_response.get("urgency", "low")
+            
+        except Exception as e:
+            # Fallback to basic keyword matching if Gemini fails
+            print(f"Gemini API error: {e}")
+            user_msg_lower = user_message.lower()
+            detected_department = None
+            detected_keywords = []
+            urgency = "low"
+            
+            # Basic symptom to department mapping fallback
+            symptom_dept_map = {
+                "Cardiology": ["heart", "chest pain", "palpitation", "blood pressure", "cardiac", "hypertension"],
+                "Neurology": ["headache", "migraine", "brain", "seizure", "dizziness", "vertigo", "nerve", "numbness"],
+                "Orthopedics": ["bone", "joint", "muscle", "back pain", "spine", "fracture", "arthritis", "knee"],
+                "Pediatrics": ["child", "baby", "infant", "kid", "pediatric", "children", "newborn"],
+                "Dermatology": ["skin", "rash", "acne", "allergy", "eczema", "itching", "hair loss"],
+            }
+            
+            for dept, keywords in symptom_dept_map.items():
+                for keyword in keywords:
+                    if keyword in user_msg_lower:
+                        detected_department = dept
+                        detected_keywords.append(keyword)
+                        break
+                if detected_department:
+                    break
+            
+            if detected_department:
+                ai_message = f"Based on your symptoms ({', '.join(detected_keywords)}), I recommend consulting a doctor from our **{detected_department}** department."
+            else:
+                ai_message = "I'm here to help you find the right doctor. Could you please describe your symptoms in more detail? For example, tell me about any pain, discomfort, or health concerns you're experiencing."
+        
+        # Build query to find doctors
+        doctors_query = db.session.query(User).join(DoctorProfile).join(
+            Department, DoctorProfile.department_id == Department.id
+        ).filter(
+            User.role == "doctor",
+            User.active == True
+        )
+        
+        if detected_department:
+            doctors_query = doctors_query.filter(Department.name.ilike(f"%{detected_department}%"))
+        
+        doctors = doctors_query.limit(5).all()
+        
+        # Build doctor list for response
+        doctor_list = []
+        for doc in doctors:
+            profile = doc.doctor_profile
+            doctor_list.append({
+                "id": doc.id,
+                "username": doc.username,
+                "specialization": profile.specialization,
+                "department_name": profile.department_ref.name,
+                "department_id": profile.department_id,
+                "experience_years": profile.experience_years,
+                "gender": profile.gender
+            })
+        
+        # Append doctor recommendation to AI message
+        if doctor_list and detected_department:
+            response_text = f"{ai_message}\n\nI found {len(doctor_list)} doctor(s) in our **{detected_department}** department who can help you."
+        elif doctor_list:
+            response_text = f"{ai_message}\n\nHere are some available doctors who might be able to assist you."
+        else:
+            response_text = ai_message
+        
+        if urgency == "high":
+            response_text = f"⚠️ **Important:** Your symptoms may require immediate attention.\n\n{response_text}"
+        
+        return make_response(jsonify({
+            "response": response_text,
+            "doctors": doctor_list,
+            "detected_department": detected_department,
+            "detected_keywords": detected_keywords,
+            "urgency": urgency
+        }), 200)
+
+
+#==============================================================================
+# Doctor AI Chatbot API - Help doctors create availability
+#==============================================================================
+
+class DoctorChatbotAPI(Resource):
+    @jwt_required()
+    def post(self):
+        user_id = int(get_jwt_identity())
+        user = User.query.get(user_id)
+        
+        if not user or user.role != "doctor":
+            return make_response(jsonify({"message": "Only doctors can use this feature"}), 403)
+        
+        doctor_profile = DoctorProfile.query.filter_by(user_id=user_id).first()
+        if not doctor_profile:
+            return make_response(jsonify({"message": "Doctor profile not found"}), 404)
+        
+        data = request.get_json()
+        if not data or not data.get("message"):
+            return make_response(jsonify({"message": "Please provide a message"}), 400)
+        
+        user_message = data.get("message", "")
+        today = date.today()
+        
+        # Check if user wants to view availability
+        view_keywords = ["show", "view", "list", "current", "existing", "my availability", "what are my", "scheduled", "upcoming"]
+        if any(word in user_message.lower() for word in view_keywords):
+            availabilities = DoctorAvailability.query.filter_by(
+                doctor_profile_id=doctor_profile.id
+            ).filter(DoctorAvailability.date >= date.today()).order_by(
+                DoctorAvailability.date, DoctorAvailability.start_time
+            ).limit(10).all()
+            
+            if availabilities:
+                slots_text = "\n".join([
+                    f"• {a.date.strftime('%A, %b %d')} from {a.start_time.strftime('%I:%M %p')} to {a.end_time.strftime('%I:%M %p')} {'(Booked)' if a.is_booked else '(Available)'}"
+                    for a in availabilities
+                ])
+                response_text = f"Here are your upcoming availability slots:\n\n{slots_text}\n\nWould you like to add more slots?"
+            else:
+                response_text = "You don't have any upcoming availability slots. Would you like me to help you create some?\n\nJust tell me something like 'Set availability for tomorrow 9am to 5pm'."
+            
+            return make_response(jsonify({
+                "response": response_text,
+                "created_slots": []
+            }), 200)
+        
+        # First try to parse with fallback (always works)
+        target_dates = parse_dates_from_message(user_message, today)
+        start_time, end_time = parse_times_from_message(user_message)
+        ai_message = ""
+        use_ai = True
+        
+        try:
+            # Use Gemini to parse scheduling request for smarter understanding
+            model = genai.GenerativeModel('gemini-2.0-flash')
+            
+            prompt = f"""You are a scheduling assistant for a doctor's availability management system.
+
+Today's date: {today.strftime('%Y-%m-%d')} ({today.strftime('%A')})
+
+Doctor's message: "{user_message}"
+
+Parse this message and extract scheduling information. Return ONLY valid JSON (no markdown, no code blocks):
+{{
+    "action": "create" or "cancel" or "unclear",
+    "dates": ["YYYY-MM-DD", "YYYY-MM-DD"],
+    "start_time": "HH:MM" (24-hour format),
+    "end_time": "HH:MM" (24-hour format),
+    "response": "A friendly confirmation message describing what you're creating",
+    "needs_clarification": true/false
+}}
+
+Guidelines:
+- "tomorrow" = {(today + timedelta(days=1)).strftime('%Y-%m-%d')}
+- "today" = {today.strftime('%Y-%m-%d')}
+- "this week" = weekdays from today to end of week
+- "next week" = Monday to Friday of next week
+- If day name mentioned (like "Monday"), calculate the next occurrence
+- "morning" typically means 09:00 to 12:00
+- "afternoon" typically means 13:00 to 17:00  
+- "evening" typically means 17:00 to 20:00
+- "full day"/"all day" means 09:00 to 17:00
+- Return dates as array even if single date
+- Always try to extract dates and times if possible
+- Be helpful and conversational in your response
+
+Return ONLY valid JSON, no other text."""
+
+            response = model.generate_content(prompt)
+            response_text = response.text.strip()
+            
+            # Clean up response - remove markdown code blocks if present
+            if response_text.startswith('```'):
+                response_text = re.sub(r'^```(?:json)?\n?', '', response_text)
+                response_text = re.sub(r'\n?```$', '', response_text)
+            
+            ai_response = json.loads(response_text)
+            
+            action = ai_response.get("action", "create")
+            dates_str = ai_response.get("dates", [])
+            start_time_str = ai_response.get("start_time")
+            end_time_str = ai_response.get("end_time")
+            ai_message = ai_response.get("response", "")
+            
+            # Parse AI dates
+            ai_dates = []
+            for d in dates_str:
+                try:
+                    ai_dates.append(datetime.strptime(d, '%Y-%m-%d').date())
+                except:
+                    pass
+            
+            # Use AI dates if available, otherwise use fallback
+            if ai_dates:
+                target_dates = ai_dates
+            
+            # Parse AI times
+            if start_time_str and end_time_str:
+                try:
+                    ai_start = datetime.strptime(start_time_str, '%H:%M').time()
+                    ai_end = datetime.strptime(end_time_str, '%H:%M').time()
+                    start_time = ai_start
+                    end_time = ai_end
+                except:
+                    pass
+            
+        except Exception as e:
+            print(f"Gemini API error: {e}")
+            use_ai = False
+            # Continue with fallback parsing (already done above)
+        
+        # Check if we have enough information
+        if not target_dates:
+            return make_response(jsonify({
+                "response": "I'd be happy to help set up your availability! Which date(s) would you like to be available?\n\nExamples:\n• 'Tomorrow 9am to 5pm'\n• 'Next Monday morning'\n• 'January 27 from 2pm to 6pm'\n• 'This week afternoons'",
+                "created_slots": []
+            }), 200)
+        
+        if not start_time or not end_time:
+            date_str = ", ".join([d.strftime('%A, %b %d') for d in target_dates[:3]])
+            return make_response(jsonify({
+                "response": f"Got it! You want availability on **{date_str}**.\n\nWhat time range works for you?\n\nExamples:\n• '9am to 5pm'\n• 'morning' (9am-12pm)\n• 'afternoon' (1pm-5pm)\n• '10:00 to 16:00'",
+                "created_slots": []
+            }), 200)
+        
+        # Create availability for each date
+        created_slots = []
+        errors = []
+        
+        for target_date in target_dates:
+            if target_date < date.today():
+                errors.append(f"Cannot set availability for past date ({target_date.strftime('%b %d')})")
+                continue
+            
+            # Check for existing slot
+            existing = DoctorAvailability.query.filter_by(
+                doctor_profile_id=doctor_profile.id,
+                date=target_date,
+                start_time=start_time,
+                end_time=end_time
+            ).first()
+            
+            if existing:
+                errors.append(f"Slot already exists for {target_date.strftime('%b %d')} {start_time.strftime('%I:%M %p')} - {end_time.strftime('%I:%M %p')}")
+                continue
+            
+            # Create new availability
+            availability = DoctorAvailability(
+                doctor_profile_id=doctor_profile.id,
+                date=target_date,
+                start_time=start_time,
+                end_time=end_time,
+                is_booked=False
+            )
+            db.session.add(availability)
+            created_slots.append({
+                "date": str(target_date),
+                "date_formatted": target_date.strftime('%A, %b %d'),
+                "start_time": start_time.strftime('%I:%M %p'),
+                "end_time": end_time.strftime('%I:%M %p')
+            })
+        
+        if created_slots:
+            db.session.commit()
+        
+        # Build response
+        if created_slots and not errors:
+            if ai_message and use_ai:
+                response_text = f"✅ {ai_message}\n\nSuccessfully created {len(created_slots)} availability slot(s). Patients can now book appointments during these times!"
+            else:
+                slots_summary = ", ".join([f"{s['date_formatted']} ({s['start_time']} - {s['end_time']})" for s in created_slots[:3]])
+                response_text = f"✅ Successfully created {len(created_slots)} availability slot(s)!\n\n📅 {slots_summary}\n\nPatients can now book appointments during these times!"
+        elif created_slots and errors:
+            response_text = f"✅ Created {len(created_slots)} slot(s).\n\n⚠️ Some issues:\n• " + "\n• ".join(errors)
+        else:
+            response_text = "❌ Couldn't create any slots:\n• " + "\n• ".join(errors) if errors else "I had trouble understanding your request. Please try again."
+        
+        return make_response(jsonify({
+            "response": response_text,
+            "created_slots": created_slots
+        }), 200)
 

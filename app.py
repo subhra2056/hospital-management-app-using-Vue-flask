@@ -61,7 +61,6 @@ def create_app():
                 db.session.add(dept)
 
         db.session.commit()
-        print('Default departments created successfully!')
 
     return app, api
 
@@ -102,7 +101,9 @@ from Backend.controllers.routes import (
     BlockUserAPI,
     UnblockUserAPI,
     HomeStatsAPI,
-    PublicDepartmentsAPI
+    PublicDepartmentsAPI,
+    ChatbotAPI,
+    DoctorChatbotAPI
 )
 
 api.add_resource(LoginAPI, '/login')
@@ -135,6 +136,8 @@ api.add_resource(BlockUserAPI, '/admin/users/<int:user_id>/block')
 api.add_resource(UnblockUserAPI, '/admin/users/<int:user_id>/unblock')
 api.add_resource(HomeStatsAPI, '/home/stats')
 api.add_resource(PublicDepartmentsAPI, '/departments')
+api.add_resource(ChatbotAPI, '/chatbot/query')
+api.add_resource(DoctorChatbotAPI, '/doctor/chatbot/availability')
 
 if __name__ == "__main__":
     app.run(host="localhost", debug = True)

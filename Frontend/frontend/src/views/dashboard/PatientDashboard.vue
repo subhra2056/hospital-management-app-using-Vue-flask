@@ -571,6 +571,18 @@
           </div>
         </div>
       </div>
+
+      <!-- AI Chatbot Section -->
+      <div v-else-if="activePanel === 'aiChatbot'" class="dashboard-content chatbot-panel">
+        <div class="dashboard-header">
+          <h2 class="dashboard-title">AI Health Assistant</h2>
+          <p class="dashboard-subtitle">Describe your symptoms and find the right doctor</p>
+        </div>
+
+        <div class="chatbot-wrapper">
+          <AIChatbot @bookDoctor="handleChatbotBookDoctor" />
+        </div>
+      </div>
     </div>
 
     <!-- Treatment Details Modal -->
@@ -611,6 +623,7 @@
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import PatientSidePanel from "../../components/PatientSidePanel.vue";
+import AIChatbot from "../../components/AIChatbot.vue";
 import auth from "../../utils/auth";
 
 const router = useRouter();
@@ -748,6 +761,23 @@ const closeSlots = () => {
   showSlots.value = false;
   selectedDoctor.value = null;
   selectedSlot.value = null;
+};
+
+// Handle booking doctor from AI Chatbot
+const handleChatbotBookDoctor = async (doctor) => {
+  // Switch to find doctor panel and select the department
+  activePanel.value = 'findDoctor';
+  await fetchDepartments();
+  
+  // Select the department
+  selectedDepartment.value = doctor.department_id;
+  await selectDepartment(doctor.department_id);
+  
+  // View the doctor's availability
+  const docInList = filteredDoctors.value.find(d => d.id === doctor.id);
+  if (docInList) {
+    viewDoctorAvailability(docInList);
+  }
 };
 
 // Book appointment
@@ -2354,6 +2384,27 @@ onMounted(() => {
 
   .doctors-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* AI Chatbot Panel Styles */
+.chatbot-panel {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 2rem);
+}
+
+.chatbot-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 768px) {
+  .chatbot-panel {
+    height: calc(100vh - 120px);
   }
 }
 </style>

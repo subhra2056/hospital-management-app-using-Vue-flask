@@ -27,18 +27,40 @@
           <span class="nav-label">{{ item.label }}</span>
           <div v-if="active === item.key" class="nav-indicator"></div>
         </div>
+        
+        <!-- Logout Option -->
+        <div class="nav-item logout-item" @click="showLogoutModal = true">
+          <div class="nav-icon">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" class="icon">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+            </svg>
+          </div>
+          <span class="nav-label">Logout</span>
+        </div>
       </nav>
     </div>
-
-    <div class="sidebar-footer">
-      <button class="logout-btn" @click="handleLogout">
-        <svg class="logout-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
-        </svg>
-        <span>Logout</span>
-      </button>
-    </div>
   </div>
+
+  <!-- Logout Confirmation Modal -->
+  <Teleport to="body">
+    <Transition name="modal">
+      <div v-if="showLogoutModal" class="modal-overlay" @click.self="showLogoutModal = false">
+        <div class="modal-container">
+          <div class="modal-icon">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+            </svg>
+          </div>
+          <h3 class="modal-title">Logout Confirmation</h3>
+          <p class="modal-message">Are you sure you want to logout?</p>
+          <div class="modal-actions">
+            <button class="btn-cancel" @click="showLogoutModal = false">Cancel</button>
+            <button class="btn-confirm" @click="confirmLogout">Yes, Logout</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup>
@@ -71,6 +93,23 @@ const menuItems = [
         "stroke-linejoin": "round",
         "stroke-width": "2",
         d: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+      })
+    ])
+  },
+  {
+    key: "aiAssistant",
+    label: "AI Assistant",
+    icon: () => h("svg", {
+      fill: "none",
+      stroke: "currentColor",
+      viewBox: "0 0 24 24",
+      class: "icon"
+    }, [
+      h("path", {
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+        "stroke-width": "2",
+        d: "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
       })
     ])
   },
@@ -130,6 +169,13 @@ const menuItems = [
 const handleLogout = () => {
   auth.clearAll();
   router.push("/login");
+};
+
+const showLogoutModal = ref(false);
+
+const confirmLogout = () => {
+  showLogoutModal.value = false;
+  handleLogout();
 };
 
 onMounted(() => {
@@ -284,38 +330,135 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.sidebar-footer {
-  padding: 1.5rem;
+/* Logout item styling */
+.logout-item {
+  margin-top: 1rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 1rem !important;
 }
 
-.logout-btn {
+.logout-item:hover {
+  background: rgba(239, 68, 68, 0.3) !important;
+  color: #fca5a5 !important;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  padding: 0.875rem 1.25rem;
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  z-index: 9999;
+}
+
+.modal-container {
+  background: white;
+  border-radius: 20px;
+  padding: 2.5rem;
+  max-width: 400px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-icon {
+  width: 70px;
+  height: 70px;
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.5rem;
+}
+
+.modal-icon svg {
+  width: 35px;
+  height: 35px;
+  color: #ef4444;
+}
+
+.modal-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.75rem;
+}
+
+.modal-message {
+  color: #6b7280;
+  font-size: 1rem;
+  margin-bottom: 2rem;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.btn-cancel {
+  padding: 0.75rem 1.5rem;
+  border: 2px solid #e5e7eb;
+  background: white;
+  color: #6b7280;
   border-radius: 12px;
-  color: white;
   font-weight: 600;
-  font-size: 0.9375rem;
+  font-size: 0.95rem;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.logout-btn:hover {
-  background: rgba(239, 68, 68, 0.3);
-  border-color: rgba(239, 68, 68, 0.5);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+.btn-cancel:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
 }
 
-.logout-icon {
-  width: 18px;
-  height: 18px;
+.btn-confirm {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.btn-confirm:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
+}
+
+/* Modal Transitions */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
 }
 
 @media (max-width: 768px) {
