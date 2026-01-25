@@ -7,6 +7,62 @@ from werkzeug.security import generate_password_hash
 from Backend.controllers.models import User, TokenBlocklist, Department
 from flask_cors import CORS
 from Backend.controllers.cleanup_tokens import delete_expired_tokens
+import subprocess
+import requests
+import time
+import sys
+
+def start_ollama():
+    """
+    Start Ollama service if it's not already running
+    """
+    try:
+        # Check if Ollama is already running
+        response = requests.get("http://localhost:11434/api/version", timeout=2)
+        if response.status_code == 200:
+            print("✓ Ollama is already running")
+            return True
+    except requests.exceptions.RequestException:
+        pass
+    
+    # Try to start Ollama
+    print("Starting Ollama service...")
+    try:
+        # Start Ollama in background
+        if sys.platform == "win32":
+            subprocess.Popen(
+                ["ollama", "serve"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        else:
+            subprocess.Popen(
+                ["ollama", "serve"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        
+        # Wait for Ollama to start
+        for i in range(10):
+            time.sleep(1)
+            try:
+                response = requests.get("http://localhost:11434/api/version", timeout=2)
+                if response.status_code == 200:
+                    print("✓ Ollama started successfully")
+                    return True
+            except requests.exceptions.RequestException:
+                continue
+        
+        print("⚠ Warning: Ollama may not have started properly")
+        return False
+    except FileNotFoundError:
+        print("⚠ Warning: Ollama is not installed. Chatbot AI features will not work.")
+        print("   Download from: https://ollama.com/download")
+        return False
+    except Exception as e:
+        print(f"⚠ Warning: Failed to start Ollama: {e}")
+        return False
 
 def create_app():
 
@@ -101,10 +157,12 @@ from Backend.controllers.routes import (
     BlockUserAPI,
     UnblockUserAPI,
     HomeStatsAPI,
-    PublicDepartmentsAPI,
-    ChatbotAPI,
-    DoctorChatbotAPI
+    PublicDepartmentsAPI
 )
+
+# Import new modular chatbot routes
+from Backend.controllers.chatbot_routes.patient_chatbot import PatientChatbotAPI as ChatbotAPI
+from Backend.controllers.chatbot_routes.doctor_chatbot import DoctorChatbotAPI
 
 api.add_resource(LoginAPI, '/login')
 api.add_resource(LogoutAPI, '/logout')
@@ -140,4 +198,6 @@ api.add_resource(ChatbotAPI, '/chatbot/query')
 api.add_resource(DoctorChatbotAPI, '/doctor/chatbot/availability')
 
 if __name__ == "__main__":
+    # Start Ollama before running Flask
+    start_ollama()
     app.run(host="localhost", debug = True)

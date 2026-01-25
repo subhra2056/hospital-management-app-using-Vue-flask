@@ -17,9 +17,15 @@ conda/
 *.log
 flask_session/
 
+# Environment variables - NEVER COMMIT THESE!
 .env
-.env.*
+.env.local
+.env.*.local
 *.env
+!.env.example
+
+# Config files with secrets
+Backend/controllers/config.py
 
 node_modules/
 npm-debug.log*
@@ -38,3 +44,40 @@ dist/
 
 .DS_Store
 Thumbs.db
+
+# Ollama and model files
+ollama/
+*.bin
+*.gguf
+*.ggml
+
+# SQLite and local DB files
+*.db
+*.sqlite*
+
+# Instance and uploads
+instance/
+uploads/
+
+# VSCode settings
+.vscode/
+
+# Flask/secret config
+.env
+.env.*
+*.env
+Backend/controllers/config.py
+
+# Remove test and seed scripts from commit
+seed_data.py
+quick_seed.py
+test_chatbot.py
+
+# Remove log files
+*.log
+
+# Node/Vue build
+node_modules/
+dist/
+.cache/
+.vite/

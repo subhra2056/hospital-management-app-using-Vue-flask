@@ -23,44 +23,27 @@
     </div>
 
     <div class="chat-messages" ref="messagesContainer">
-      <div v-for="(message, index) in messages" :key="index" :class="['message', message.type]">
-        <div class="message-avatar">
-          <svg v-if="message.type === 'bot'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-          </svg>
-          <svg v-else fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-        </div>
-        <div class="message-content">
-          <div class="message-bubble" v-html="formatMessage(message.text)"></div>
-          <span class="message-time">{{ formatTime(message.timestamp) }}</span>
-        </div>
-      </div>
-
-      <!-- Created Slots Display -->
-      <div v-if="createdSlots.length > 0" class="created-slots">
-        <h4 class="slots-title">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-          Created Availability Slots
-        </h4>
-        <div class="slots-list">
-          <div v-for="(slot, idx) in createdSlots" :key="idx" class="slot-card">
-            <div class="slot-date">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-              </svg>
-              <span>{{ formatDisplayDate(slot.date) }}</span>
+      <div v-for="(message, index) in messages" :key="index">
+        <div :class="['message', message.type]">
+          <div class="message-avatar">
+            <svg v-if="message.type === 'bot'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+            </svg>
+            <svg v-else fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+          </div>
+          <div class="message-content">
+            <div class="message-bubble" v-html="formatMessage(message.text)"></div>
+            <span class="message-time">{{ formatTime(message.timestamp) }}</span>
+            
+            <!-- Created Slots Display - inline with the message -->
+            <div v-if="message.created_slots && message.created_slots.length > 0" class="created-slots-inline">
+              <div v-for="(slot, idx) in message.created_slots" :key="idx" class="slot-card-mini">
+                <span class="slot-info">📅 {{ formatDisplayDate(slot.date) }} • {{ slot.start_time }} - {{ slot.end_time }}</span>
+                <span class="slot-badge">✓ Created</span>
+              </div>
             </div>
-            <div class="slot-time">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-              </svg>
-              <span>{{ slot.start_time }} - {{ slot.end_time }}</span>
-            </div>
-            <span class="slot-status success">Created</span>
           </div>
         </div>
       </div>
@@ -117,16 +100,15 @@ import auth from "../utils/auth";
 
 const userInput = ref("");
 const messages = ref([]);
-const createdSlots = ref([]);
 const isLoading = ref(false);
 const messagesContainer = ref(null);
 
 const suggestions = [
-  "Set availability for tomorrow",
-  "Available next Monday 9am-5pm",
-  "Create slots for this week",
-  "Available daily 10am-4pm",
-  "Show my current availability"
+  "Create availability tomorrow 9am to 5pm",
+  "Create availability Monday 10am to 4pm",
+  "Show my current availability",
+  "View my appointments",
+  "Delete availability"
 ];
 
 const getToken = () => auth.getToken();
@@ -135,7 +117,7 @@ onMounted(() => {
   // Welcome message
   messages.value.push({
     type: "bot",
-    text: "👋 Hello Doctor! I'm your AI Scheduling Assistant. I can help you manage your availability slots quickly.\n\nYou can tell me things like:\n• \"Set availability for tomorrow from 9am to 5pm\"\n• \"Make me available on Monday, Wednesday, Friday 10am-4pm\"\n• \"Create hourly slots for next week mornings\"\n• \"Show my current availability\"\n\nHow can I help you today?",
+    text: "👋 Hello Doctor! I'm your AI Scheduling Assistant.\n\nI can help you:\n• Create availability: \"create availability tomorrow 9am to 5pm\"\n• View schedule: \"show my current availability\"\n• Delete slots: \"delete slot 10\"\n• View appointments: \"view my appointments\"\n\nHow can I help you today?",
     timestamp: new Date()
   });
 });
@@ -194,17 +176,13 @@ const sendMessage = async (text) => {
     const data = await response.json();
 
     if (response.ok) {
-      // Add bot response
+      // Add bot response with created slots attached
       messages.value.push({
         type: "bot",
         text: data.response,
-        timestamp: new Date()
+        timestamp: new Date(),
+        created_slots: data.created_slots || []
       });
-
-      // Show created slots if any
-      if (data.created_slots && data.created_slots.length > 0) {
-        createdSlots.value = [...createdSlots.value, ...data.created_slots];
-      }
     } else {
       const errorMsg = data.message || data.msg || "I'm sorry, I couldn't process your request.";
       messages.value.push({
@@ -236,7 +214,6 @@ const clearChat = () => {
     text: "👋 Hello Doctor! I'm your AI Scheduling Assistant. How can I help you manage your availability today?",
     timestamp: new Date()
   }];
-  createdSlots.value = [];
 };
 </script>
 
@@ -597,6 +574,39 @@ const clearChat = () => {
   height: 22px;
 }
 
+/* Inline created slots */
+.created-slots-inline {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.slot-card-mini {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  border-left: 3px solid #4caf50;
+}
+
+.slot-info {
+  color: #2e7d32;
+  font-weight: 500;
+}
+
+.slot-badge {
+  background: #4caf50;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 @media (max-width: 768px) {
   .slot-card {
     flex-direction: column;
@@ -606,6 +616,12 @@ const clearChat = () => {
 
   .slot-status {
     margin-left: 0;
+  }
+  
+  .slot-card-mini {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
   }
 }
 </style>
