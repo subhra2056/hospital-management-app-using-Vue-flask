@@ -6,12 +6,13 @@ fake = Faker()
 BASE_URL = 'http://localhost:5000/api'
 
 specializations = [
-    'Cardiac Surgery', 'Interventional Cardiology',
-    'Neuro Surgery', 'Stroke Medicine',
-    'Joint Replacement', 'Sports Medicine',
-    'Neonatology', 'Pediatric Cardiology',
-    'Cosmetic Dermatology', 'Dermatopathology'
+    "Cardiac Surgery",          # Cardiology
+    "Neuro Surgery",            # Neurology
+    "Joint Replacement",        # Orthopedics
+    "Neonatology",              # Pediatrics
+    "Cosmetic Dermatology"      # Dermatology
 ]
+
 genders = ['Male', 'Female']
 
 # Login as admin first
@@ -39,8 +40,8 @@ if not departments:
 print(f'Found {len(departments)} departments')
 print()
 
-print('Seeding 5 doctors...')
-for i in range(5):
+print('Seeding 3 doctors...')
+for i in range(3):
     dept = random.choice(departments)
     data = {
         'username': fake.name(),
@@ -58,8 +59,8 @@ for i in range(5):
         print(f"  Failed: {r.json().get('message', 'error')}")
 
 print()
-print('Seeding 5 patients...')
-for i in range(5):
+print('Seeding 3 patients...')
+for i in range(3):
     data = {
         'username': fake.name(),
         'email': fake.email(),

@@ -33,7 +33,7 @@ function handleChange(section) {
   if (section === "appointments") router.push("/doctor/appointments");
   if (section === "availability") router.push("/doctor/availability");
   if (section === "profile") router.push("/profile");
-  // AI Assistant doesn't need a route change as it's rendered inline
+
 }
 </script>
 

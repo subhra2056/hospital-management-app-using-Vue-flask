@@ -64,7 +64,7 @@
                 <span>{{ doctor.experience_years || 0 }} years experience</span>
               </div>
             </div>
-            <button class="book-btn" @click="$emit('bookDoctor', doctor)">
+            <button class="book-btn" @click="emit('bookDoctor', doctor)">
               Book Appointment
             </button>
           </div>

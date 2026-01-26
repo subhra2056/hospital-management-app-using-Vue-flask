@@ -195,7 +195,7 @@ api.add_resource(UnblockUserAPI, '/admin/users/<int:user_id>/unblock')
 api.add_resource(HomeStatsAPI, '/home/stats')
 api.add_resource(PublicDepartmentsAPI, '/departments')
 api.add_resource(ChatbotAPI, '/chatbot/query')
-api.add_resource(DoctorChatbotAPI, '/doctor/chatbot/availability')
+api.add_resource(DoctorChatbotAPI, '/doctor/chatbot')
 
 if __name__ == "__main__":
     # Start Ollama before running Flask

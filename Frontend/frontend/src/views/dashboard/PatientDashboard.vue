@@ -774,9 +774,20 @@ const handleChatbotBookDoctor = async (doctor) => {
   await selectDepartment(doctor.department_id);
   
   // View the doctor's availability
-  const docInList = filteredDoctors.value.find(d => d.id === doctor.id);
+  // Use loose equality (==) to handle potential string/int mismatch
+  // eslint-disable-next-line eqeqeq
+  const docInList = filteredDoctors.value.find(d => d.id == doctor.id);
+  
   if (docInList) {
     viewDoctorAvailability(docInList);
+  } else {
+    // If exact doctor not found (e.g. inactive or filtering issue), try to find by name or alert
+    const docByName = filteredDoctors.value.find(d => d.username === doctor.username);
+    if (docByName) {
+       viewDoctorAvailability(docByName);
+    } else {
+       alert(`Could not find Dr. ${doctor.username} in the available list. Please select manually.`);
+    }
   }
 };
 
@@ -1309,7 +1320,7 @@ onMounted(() => {
   border-radius: 20px;
 }
 
-.status-badge.booked { background: #fef3c7; color: #92400e; }
+.status-badge.booked { background: #e0e7ff; color: #4338ca; }
 .status-badge.completed { background: #d1fae5; color: #065f46; }
 .status-badge.cancelled { background: #fee2e2; color: #991b1b; }
 .status-badge.pending { background: #e0e7ff; color: #3730a3; }
@@ -1988,13 +1999,13 @@ onMounted(() => {
 }
 
 .tab-btn:hover {
-  border-color: #10b981;
-  color: #10b981;
+  border-color: #5e63b6;
+  color: #5e63b6;
 }
 
 .tab-btn.active {
-  background: #10b981;
-  border-color: #10b981;
+  background: #5e63b6;
+  border-color: #5e63b6;
   color: white;
 }
 
@@ -2050,7 +2061,7 @@ onMounted(() => {
   border-radius: 6px;
 }
 
-.status-badge-small.booked { background: #fef3c7; color: #92400e; }
+.status-badge-small.booked { background: #e0e7ff; color: #4338ca; }
 .status-badge-small.completed { background: #d1fae5; color: #065f46; }
 .status-badge-small.cancelled { background: #fee2e2; color: #991b1b; }
 .status-badge-small.pending { background: #e0e7ff; color: #3730a3; }

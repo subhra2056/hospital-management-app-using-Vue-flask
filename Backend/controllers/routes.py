@@ -1119,6 +1119,10 @@ class SearchDoctorsAPI(Resource):
         
         if name:
             query = query.filter(User.username.ilike(f"%{name}%"))
+
+        department_id = request.args.get("department_id")
+        if department_id:
+            query = query.filter(DoctorProfile.department_id == department_id)
         
         doctors = query.all()
         

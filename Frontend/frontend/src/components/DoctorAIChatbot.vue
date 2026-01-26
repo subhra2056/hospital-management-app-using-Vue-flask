@@ -39,10 +39,25 @@
             
             <!-- Created Slots Display - inline with the message -->
             <div v-if="message.created_slots && message.created_slots.length > 0" class="created-slots-inline">
+              <div class="slots-summary">
+                <strong>📅 Created {{ message.created_slots.length }} slot(s):</strong>
+              </div>
               <div v-for="(slot, idx) in message.created_slots" :key="idx" class="slot-card-mini">
-                <span class="slot-info">📅 {{ formatDisplayDate(slot.date) }} • {{ slot.start_time }} - {{ slot.end_time }}</span>
+                <span class="slot-info">
+                  <span class="slot-date-display">{{ slot.date_formatted || formatDisplayDate(slot.date) }}</span>
+                  <span class="slot-time-display">{{ formatTimeRange(slot.start_time, slot.end_time) }}</span>
+                </span>
                 <span class="slot-badge">✓ Created</span>
               </div>
+              <div v-if="message.created_slots.length > 5" class="slots-more">
+                ... and {{ message.created_slots.length - 5 }} more slots
+              </div>
+            </div>
+
+            <!-- Debug Raw AI Output -->
+            <div v-if="message.debug_raw_ai" class="debug-raw-ai">
+              <strong>Debug (AI Output):</strong>
+              <pre>{{ message.debug_raw_ai }}</pre>
             </div>
           </div>
         </div>
@@ -107,20 +122,9 @@ const suggestions = [
   "Create availability tomorrow 9am to 5pm",
   "Create availability Monday 10am to 4pm",
   "Show my current availability",
-  "View my appointments",
-  "Delete availability"
+  "Delete slot",
+  "View my appointments"
 ];
-
-const getToken = () => auth.getToken();
-
-onMounted(() => {
-  // Welcome message
-  messages.value.push({
-    type: "bot",
-    text: "👋 Hello Doctor! I'm your AI Scheduling Assistant.\n\nI can help you:\n• Create availability: \"create availability tomorrow 9am to 5pm\"\n• View schedule: \"show my current availability\"\n• Delete slots: \"delete slot 10\"\n• View appointments: \"view my appointments\"\n\nHow can I help you today?",
-    timestamp: new Date()
-  });
-});
 
 const scrollToBottom = async () => {
   await nextTick();
@@ -129,30 +133,29 @@ const scrollToBottom = async () => {
   }
 };
 
-const formatTime = (date) => {
-  return new Date(date).toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-};
+onMounted(() => {
+  messages.value.push({
+    type: "bot",
+    text: `
+👋 Hello Doctor! I'm your AI Scheduling Assistant.
 
-const formatMessage = (text) => {
-  return text.replace(/\n/g, "<br>");
-};
+I can help you:
+• Create availability: "create availability tomorrow 9am to 5pm"
+• View schedule: "show my current availability"
+• Delete slots: "delete slot 5" or "delete slot #5"
+• View appointments: "view my appointments"
 
-const formatDisplayDate = (dateStr) => {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric"
+💡 Tip: When you create availability, it creates one slot for the entire time range. You can delete individual slots later if needed.
+
+How can I help you today?
+    `,
+    timestamp: new Date()
   });
-};
+});
 
 const sendMessage = async (text) => {
   if (!text.trim()) return;
 
-  // Add user message
   messages.value.push({
     type: "user",
     text: text.trim(),
@@ -164,58 +167,106 @@ const sendMessage = async (text) => {
   await scrollToBottom();
 
   try {
-    const response = await fetch("http://localhost:5000/api/doctor/chatbot/availability", {
+    const token = auth.getToken();
+
+    const response = await fetch("http://localhost:5000/api/doctor/chatbot", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getToken()}`
+        Authorization: `Bearer ${token}`
       },
       body: JSON.stringify({ message: text.trim() })
     });
 
     const data = await response.json();
 
-    if (response.ok) {
-      // Add bot response with created slots attached
+    // Backend returns: { response: "...", created_slots: [...], debug_raw_ai: "..." }
+    if (data.response) {
       messages.value.push({
         type: "bot",
         text: data.response,
         timestamp: new Date(),
-        created_slots: data.created_slots || []
+        created_slots: data.created_slots || null,
+        debug_raw_ai: data.debug_raw_ai || null
       });
     } else {
-      const errorMsg = data.message || data.msg || "I'm sorry, I couldn't process your request.";
       messages.value.push({
         type: "bot",
-        text: response.status === 401 
-          ? "Your session has expired. Please log out and log back in."
-          : response.status === 403
-          ? "This feature is only available for doctors."
-          : errorMsg,
+        text: "⚠️ Unexpected response from server.",
         timestamp: new Date()
       });
     }
-  } catch (error) {
-    console.error("Chatbot error:", error);
+
+  } catch (err) {
+    console.error(err);
     messages.value.push({
       type: "bot",
-      text: "I'm having trouble connecting to the server. Please make sure the backend server is running and try again.",
+      text: "❌ Cannot reach the server. Please make sure backend is running.",
       timestamp: new Date()
     });
+
   } finally {
     isLoading.value = false;
     await scrollToBottom();
   }
 };
 
+const formatTime = (date) => {
+  return new Date(date).toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+};
+
+const formatMessage = (text) => text.replace(/\n/g, "<br>");
+
+const formatDisplayDate = (dateStr) => {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric"
+  });
+};
+
+const formatTimeRange = (startTime, endTime) => {
+  // Handle both "HH:MM" and "HH:MM" formats
+  const formatTime = (timeStr) => {
+    if (!timeStr) return "";
+    // If already formatted (contains AM/PM), return as is
+    if (timeStr.includes("AM") || timeStr.includes("PM")) {
+      return timeStr;
+    }
+    // Convert "HH:MM" to "H:MM AM/PM"
+    const [hours, minutes] = timeStr.split(":");
+    const hour = parseInt(hours);
+    const ampm = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${minutes} ${ampm}`;
+  };
+  
+  return `${formatTime(startTime)} - ${formatTime(endTime)}`;
+};
+
 const clearChat = () => {
   messages.value = [{
     type: "bot",
-    text: "👋 Hello Doctor! I'm your AI Scheduling Assistant. How can I help you manage your availability today?",
+    text: `👋 Hello Doctor! I'm your AI Scheduling Assistant.
+
+I can help you:
+• Create availability: "create availability tomorrow 9am to 5pm"
+• View schedule: "show my current availability"
+• Delete slots: "delete slot 5" or "delete slot #5"
+• View appointments: "view my appointments"
+
+💡 Tip: When you create availability, it creates one slot for the entire time range. You can delete individual slots later if needed.
+
+How can I help you today?`,
     timestamp: new Date()
   }];
 };
 </script>
+
 
 <style scoped>
 .chatbot-container {
@@ -576,10 +627,20 @@ const clearChat = () => {
 
 /* Inline created slots */
 .created-slots-inline {
-  margin-top: 8px;
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.slots-summary {
+  font-size: 0.875rem;
+  color: #374151;
+  margin-bottom: 4px;
+  font-weight: 600;
 }
 
 .slot-card-mini {
@@ -587,24 +648,51 @@ const clearChat = () => {
   align-items: center;
   justify-content: space-between;
   background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
-  padding: 8px 12px;
+  padding: 10px 14px;
   border-radius: 8px;
   font-size: 0.85rem;
   border-left: 3px solid #4caf50;
+  transition: transform 0.2s;
+}
+
+.slot-card-mini:hover {
+  transform: translateX(2px);
 }
 
 .slot-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   color: #2e7d32;
   font-weight: 500;
+}
+
+.slot-date-display {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.slot-time-display {
+  font-size: 0.8rem;
+  opacity: 0.9;
 }
 
 .slot-badge {
   background: #4caf50;
   color: white;
-  padding: 2px 8px;
+  padding: 4px 10px;
   border-radius: 12px;
   font-size: 0.75rem;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.slots-more {
+  font-size: 0.8rem;
+  color: #64748b;
+  font-style: italic;
+  text-align: center;
+  padding: 4px;
 }
 
 @media (max-width: 768px) {

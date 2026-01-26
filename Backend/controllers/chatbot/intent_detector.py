@@ -69,7 +69,7 @@ def get_doctor_intent_prompt(user_message):
     saturday = get_next_weekday('saturday')
     sunday = get_next_weekday('sunday')
     
-    return f"""SYSTEM: JSON classifier. Return ONLY valid JSON. No explanations.
+    return f"""SYSTEM: Strict JSON classifier. Return ONLY valid JSON. No explanations, no text before or after JSON.
 
 MESSAGE: "{user_message}"
 TODAY: {today} ({today.strftime('%A')})
@@ -87,19 +87,41 @@ INTENTS (choose ONE):
 
 RULES:
 1. "book availability", "available from", "available daily" = create_availability
-2. "show schedule", "my schedule", "current availability" = view_availability  
+2. "show schedule", "my schedule", "current availability" = view_availability
 3. "delete availability", "remove slot" = delete_availability
 4. "cancel appointment 6" = cancel_appointment with appointment_ids:[6]
 5. NEVER classify schedule/availability requests as general_query
+6. If the message is ambiguous, prefer create_availability if it mentions time or date, otherwise ask for clarification.
+7. Time must be in 24-hour format (e.g., 09:00, 16:00). If user says "9am", use "09:00". If "4pm", use "16:00".
+8. If the message is missing a date or time, set intent to create_availability but leave missing fields empty in entities.
 
-TIME: 4am=04:00, 7am=07:00, 9am=09:00, 10am=10:00, 11am=11:00, 12pm=12:00, 1pm=13:00, 2pm=14:00, 3pm=15:00, 4pm=16:00, 5pm=17:00, 6pm=18:00
+TIME CONVERSION RULES:
+- Times with "am/pm": Convert to 24-hour format
+  - "3:00 pm" or "3 pm" = 15:00 (NOT 03:00)
+  - "4:47 pm" or "4:47pm" = 16:47
+  - "3:00 am" = 03:00
+  - "12:00 pm" = 12:00 (noon)
+  - "12:00 am" = 00:00 (midnight)
+- Always preserve minutes: "3:47 pm" -> "15:47", not "15:00"
+- Examples: 4am=04:00, 7am=07:00, 9am=09:00, 10am=10:00, 11am=11:00, 12pm=12:00, 1pm=13:00, 2pm=14:00, 3pm=15:00, 3:00pm=15:00, 3:47pm=15:47, 4pm=16:00, 4:47pm=16:47, 5pm=17:00, 6pm=18:00
 
-FORMAT: {{"intent":"NAME","entities":{{"dates":["YYYY-MM-DD"],"times":{{"start":"HH:MM","end":"HH:MM"}},"slot_ids":[],"appointment_ids":[]}}}}
+RECURRING PATTERNS:
+- "every monday", "every tuesday", etc. = weekly pattern with specific day(s)
+- "weekdays", "every weekday" = Monday-Friday pattern
+- "daily", "every day" = every day pattern
+- "every monday and wednesday" = custom weekly pattern with multiple days
+- "for next week", "for the next 2 weeks" = time-limited recurring pattern
+
+FORMAT: {{"intent":"NAME","entities":{{"dates":["YYYY-MM-DD"],"times":{{"start":"HH:MM","end":"HH:MM"}},"recurrence":{{"type":"daily|weekly|weekdays|custom","days":["monday","wednesday"],"end_date":"YYYY-MM-DD"}},"slot_ids":[],"appointment_ids":[]}}}}
 
 EXAMPLES:
 "create availability thursday 4am to 7am" -> {{"intent":"create_availability","entities":{{"dates":["{thursday}"],"times":{{"start":"04:00","end":"07:00"}}}}}}
 "book availability friday 9am to 5pm" -> {{"intent":"create_availability","entities":{{"dates":["{friday}"],"times":{{"start":"09:00","end":"17:00"}}}}}}
-"available daily 10am to 4pm" -> {{"intent":"create_availability","entities":{{"times":{{"start":"10:00","end":"16:00"}}}}}}
+"available daily 10am to 4pm" -> {{"intent":"create_availability","entities":{{"times":{{"start":"10:00","end":"16:00"}},"recurrence":{{"type":"daily"}}}}}}
+"every monday 9am to 5pm" -> {{"intent":"create_availability","entities":{{"times":{{"start":"09:00","end":"17:00"}},"recurrence":{{"type":"weekly","days":["monday"]}}}}}}
+"weekdays 10am to 4pm" -> {{"intent":"create_availability","entities":{{"times":{{"start":"10:00","end":"16:00"}},"recurrence":{{"type":"weekdays"}}}}}}
+"every monday and wednesday 2pm to 6pm" -> {{"intent":"create_availability","entities":{{"times":{{"start":"14:00","end":"18:00"}},"recurrence":{{"type":"custom","days":["monday","wednesday"]}}}}}}
+"daily for next week 9am to 5pm" -> {{"intent":"create_availability","entities":{{"times":{{"start":"09:00","end":"17:00"}},"recurrence":{{"type":"daily","end_date":"{today + timedelta(days=7)}"}}}}}}
 "Available from 10am-4pm" -> {{"intent":"create_availability","entities":{{"times":{{"start":"10:00","end":"16:00"}}}}}}
 "show my schedule" -> {{"intent":"view_availability","entities":{{}}}}
 "Show my current availability" -> {{"intent":"view_availability","entities":{{}}}}
@@ -109,5 +131,8 @@ EXAMPLES:
 "cancel appointment 6" -> {{"intent":"cancel_appointment","entities":{{"appointment_ids":[6]}}}}
 "cancel appointment" -> {{"intent":"cancel_appointment","entities":{{}}}}
 "Hello" -> {{"intent":"general_query","entities":{{}}}}
+"I want to be available" -> {{"intent":"create_availability","entities":{{}}}}  # ambiguous, but prefer create_availability
+"Set a slot" -> {{"intent":"create_availability","entities":{{}}}}  # ambiguous, but prefer create_availability
+"Can you help me?" -> {{"intent":"general_query","entities":{{}}}}  # not schedule related
 
-JSON:"""
+JSON ONLY OUTPUT:"""

@@ -27,35 +27,83 @@ def extract_json_from_llm(text):
         
         # Fix common malformed JSON patterns
         # Fix "entities:{}" -> "entities":{}
-        cleaned = re.sub(r'"entities:\{', '"entities":{', cleaned)
-        # Fix missing quotes around keys
-        cleaned = re.sub(r'([{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', cleaned)
+        # Try to find the outermost braces
+        start = cleaned.find('{')
+        end = cleaned.rfind('}')
         
-        # Fix incomplete JSON - count braces and add missing ones
-        open_braces = cleaned.count('{')
-        close_braces = cleaned.count('}')
-        if open_braces > close_braces:
-            cleaned = cleaned + ('}' * (open_braces - close_braces))
+        # If no closing brace found, the JSON might be incomplete - try to find where it should end
+        if start != -1 and end == -1:
+            # JSON starts but doesn't close - try to add closing braces
+            open_count = cleaned[start:].count('{')
+            close_count = cleaned[start:].count('}')
+            if open_count > close_count:
+                # Add missing closing braces
+                cleaned = cleaned + '}' * (open_count - close_count)
+                end = len(cleaned) - 1
         
-        # Try to parse the entire cleaned text first
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError:
-            pass
-        
-        # Find the first { and try to parse from there
-        first_brace = cleaned.find('{')
-        if first_brace != -1:
-            json_candidate = cleaned[first_brace:]
-            # Fix braces again after slicing
-            open_braces = json_candidate.count('{')
-            close_braces = json_candidate.count('}')
-            if open_braces > close_braces:
-                json_candidate = json_candidate + ('}' * (open_braces - close_braces))
-            
+        if start != -1 and end != -1 and end > start:
+            json_candidate = cleaned[start:end+1]
             try:
                 return json.loads(json_candidate)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                # If first attempt fails, try to repair common issues
+                try:
+                    # Fix missing quotes around keys: {key: "value"} -> {"key": "value"}
+                    fixed_candidate = re.sub(r'([{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', json_candidate)
+                    
+                    # Count braces and brackets to check for missing closing characters
+                    open_braces = fixed_candidate.count('{')
+                    close_braces = fixed_candidate.count('}')
+                    open_brackets = fixed_candidate.count('[')
+                    close_brackets = fixed_candidate.count(']')
+                    
+                    # Add missing closing braces/brackets
+                    if open_braces > close_braces:
+                        fixed_candidate += '}' * (open_braces - close_braces)
+                    if open_brackets > close_brackets:
+                        fixed_candidate += ']' * (open_brackets - close_brackets)
+                    
+                    # Fix malformed empty objects: {"entities":{"}} -> {"entities":{}}
+                    # Handle cases where there's a stray quote or extra brace in empty objects
+                    fixed_candidate = re.sub(r'"entities"\s*:\s*\{\s*"\s*\}\s*\}', '"entities": {}}', fixed_candidate)
+                    fixed_candidate = re.sub(r'"entities"\s*:\s*\{\s*\}\s*\}', '"entities": {}}', fixed_candidate)
+                    
+                    # Fix empty objects with stray quotes: {"key":{""}} -> {"key":{}}
+                    fixed_candidate = re.sub(r':\s*\{\s*"\s*"\s*\}', ': {}', fixed_candidate)
+                    
+                    # Fix trailing commas before closing braces/brackets
+                    fixed_candidate = re.sub(r',\s*}', '}', fixed_candidate)
+                    fixed_candidate = re.sub(r',\s*]', ']', fixed_candidate)
+                    
+                    # Try parsing again
+                    return json.loads(fixed_candidate)
+                except Exception as repair_error:
+                    # If repair failed, try one more time with just adding missing braces
+                    try:
+                        open_braces = json_candidate.count('{')
+                        close_braces = json_candidate.count('}')
+                        open_brackets = json_candidate.count('[')
+                        close_brackets = json_candidate.count(']')
+                        
+                        simple_fix = json_candidate
+                        if open_braces > close_braces:
+                            simple_fix += '}' * (open_braces - close_braces)
+                        if open_brackets > close_brackets:
+                            simple_fix += ']' * (open_brackets - close_brackets)
+                        
+                        return json.loads(simple_fix)
+                    except:
+                        print(f"[JSON REPAIR FAILED] {str(repair_error)}")
+                        print(f"[ORIGINAL] {json_candidate}")
+                        pass
+                
+        # Regex to match valid JSON entries more robustly
+        # This regex matches { "key": ... } patterns
+        match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+        if match:
+             try:
+                return json.loads(match.group(0))
+             except:
                 pass
         
         # Fallback: use regex to extract nested JSON
