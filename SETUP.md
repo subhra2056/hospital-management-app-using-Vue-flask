@@ -61,7 +61,7 @@ python seed_data.py
 
 ### a. Install Node Modules
 ```
-cd Frontend/frontend
+cd Frontend
 npm install
 ```
 
@@ -98,7 +98,7 @@ python app.py
 
 ### b. Start Frontend (Vue)
 ```
-cd Frontend/frontend
+cd Frontend
 npm run dev
 ```
 - Frontend: http://localhost:5173

@@ -9,7 +9,7 @@ import DoctorAvailability from "../views/dashboard/DoctorAvailability.vue";
 import DoctorAppointments from "../views/dashboard/DoctorAppointments.vue";
 import ViewProfile from "../views/profile/ViewProfile.vue";
 import AdminLayout from "../views/dashboard/AdminLayout.vue";
-import AddDoctor from "../forms/AddDoctor.vue";
+import AddDoctor from "../views/dashboard/AddDoctor.vue";
 import DoctorList from "../views/dashboard/DoctorList.vue";
 import PatientList from "../views/dashboard/PatientList.vue";
 import DepartmentManagement from "../views/dashboard/DepartmentManagement.vue";

@@ -151,7 +151,6 @@ from Backend.controllers.routes import (
     ExportPatientTreatmentsAPI,
     GetUserProfileAPI,
     DepartmentAPI,
-    PaymentAPI,
     UpdateDoctorAPI,
     UpdatePatientAPI,
     BlockUserAPI,
@@ -187,7 +186,6 @@ api.add_resource(DeleteUserAPI, '/admin/users/<int:user_id>')
 api.add_resource(ExportPatientTreatmentsAPI, '/patient/export-treatments')
 api.add_resource(GetUserProfileAPI, '/user/profile')
 api.add_resource(DepartmentAPI, '/admin/departments', '/admin/departments/<int:department_id>')
-api.add_resource(PaymentAPI, '/patient/payments/<int:treatment_id>')
 api.add_resource(UpdateDoctorAPI, '/admin/doctors/<int:user_id>')
 api.add_resource(UpdatePatientAPI, '/admin/patients/<int:user_id>')
 api.add_resource(BlockUserAPI, '/admin/users/<int:user_id>/block')

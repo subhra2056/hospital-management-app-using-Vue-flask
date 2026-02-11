@@ -159,7 +159,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import auth from "../utils/auth";
+import auth from "../../utils/auth";
 
 const router = useRouter();
 

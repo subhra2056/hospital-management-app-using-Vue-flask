@@ -1,6 +1,6 @@
 from flask_restful import Resource
 from flask import jsonify, make_response, request
-from .models import User, PatientProfile, TokenBlocklist, DoctorProfile, Appointment, Treatment, Payment, Department, DoctorAvailability
+from .models import User, PatientProfile, TokenBlocklist, DoctorProfile, Appointment, Treatment, Department, DoctorAvailability
 from flask_jwt_extended import jwt_required, get_jwt, create_access_token, get_jwt_identity
 from werkzeug.security import check_password_hash, generate_password_hash
 from .database import db
@@ -1566,59 +1566,6 @@ class DepartmentAPI(Resource):
         invalidate_cache("cache:admin_departments:*")
         
         return make_response(jsonify({"message": "Department deleted successfully"}), 200)
-
-#==============================================================================
-# Payment API
-#==============================================================================
-
-class PaymentAPI(Resource):
-    @jwt_required()
-    def post(self, treatment_id):
-        user_id = int(get_jwt_identity())
-        user = User.query.get(user_id)
-        
-        if user.role != "patient":
-            return make_response(jsonify({"message": "Unauthorized"}), 403)
-        
-        treatment = Treatment.query.filter_by(id=treatment_id, appointment__patient_id=user_id).first()
-        if not treatment:
-            return make_response(jsonify({"message": "Treatment not found"}), 404)
-        
-        data = request.get_json()
-        amount = data.get("amount")
-        payment_method = data.get("payment_method")
-        card_number = data.get("card_number")
-        expiry_date = data.get("expiry_date")
-        cvv = data.get("cvv")
-        
-        if not all([amount, payment_method]):
-            return make_response(jsonify({"message": "Amount and payment method are required"}), 400)
-        
-        # Generate a dummy transaction ID
-        import uuid
-        transaction_id = str(uuid.uuid4())[:8].upper()
-        
-        payment = Payment(
-            treatment_id=treatment_id,
-            patient_id=user_id,
-            amount=float(amount),
-            payment_method=payment_method,
-            transaction_id=transaction_id,
-            status="COMPLETED"  # Dummy payment always succeeds
-        )
-        
-        db.session.add(payment)
-        db.session.commit()
-        
-        return make_response(jsonify({
-            "message": "Payment processed successfully",
-            "payment": {
-                "id": payment.id,
-                "transaction_id": payment.transaction_id,
-                "amount": payment.amount,
-                "status": payment.status
-            }
-        }), 201)
 
 #==============================================================================
 #Update Doctor Profile

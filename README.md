@@ -136,7 +136,7 @@ project/
 
 1. **Navigate to the frontend directory**
    ```bash
-   cd Frontend/frontend
+   cd Frontend
    ```
 
 2. **Install Node.js dependencies**
