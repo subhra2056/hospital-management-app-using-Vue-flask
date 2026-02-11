@@ -98,22 +98,6 @@ class Treatment(db.Model):
 
     appointment = db.relationship("Appointment", back_populates="treatment")
 
-
-class Payment(db.Model):
-    __tablename__ = "payments"
-
-    id = db.Column(db.Integer, primary_key=True)
-    treatment_id = db.Column(db.Integer, db.ForeignKey("treatments.id"), nullable=False)
-    patient_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    payment_method = db.Column(db.String(50), nullable=False)  # card, upi, etc.
-    transaction_id = db.Column(db.String(100), unique=True, nullable=False)
-    status = db.Column(db.String(20), default="PENDING")  # PENDING, COMPLETED, FAILED
-    payment_date = db.Column(db.DateTime, default=datetime.utcnow)
-
-    treatment = db.relationship("Treatment")
-    patient = db.relationship("User", foreign_keys=[patient_id])
-
 class Department(db.Model):
     __tablename__ = "departments"
 
