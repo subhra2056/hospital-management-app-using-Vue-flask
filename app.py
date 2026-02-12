@@ -123,10 +123,6 @@ def create_app():
 app, api = create_app()
 CORS(app, origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"], supports_credentials=True, methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
-#==================================================
-#auth.py
-#==================================================
-
 from Backend.controllers.routes import (
     LoginAPI,
     LogoutAPI,
